@@ -5,7 +5,7 @@ import random
 import collections
 import pickle
 import os
-use_sit = False
+use_sit = True
 
 
 def make_context(dialog, cur_n, max_len=100):

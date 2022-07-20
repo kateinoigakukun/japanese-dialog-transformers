@@ -7,7 +7,7 @@ import pickle
 import os
 ##  python scripts/extract_persona_chat.py data/Persona-Chat/ペルソナ対話1-5000.xlsx data/exp202102/flat/persona_chat/raw/all
 
-use_persona = False
+use_persona = True
 
 
 def make_context(dialog, cur_n, max_len=130):
@@ -33,7 +33,7 @@ def make_context(dialog, cur_n, max_len=130):
 def main():
     if use_persona:
         # 対話種別・補足情報付き
-        template = "個性雑談:[SEP]{persona}[SEP]{cont}"
+        template = "{persona}{cont}"
     else:
         # フラット
         template = "{cont}"

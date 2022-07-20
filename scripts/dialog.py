@@ -11,6 +11,7 @@ from fairseq_cli.interactive import make_batches
 import sys
 import ast
 import torch
+import torch.nn.utils.prune as prune
 import time
 import math
 import re
@@ -29,6 +30,9 @@ from fairseq_cli.generate import get_symbols_to_strip_from_output
 
 from fairseq.dataclass.configs import FairseqConfig
 from fairseq.dataclass.utils import convert_namespace_to_omegaconf
+
+import random
+from perchat_utils import list_personalities
 
 SEPARATOR = "[SEP]"
 SPK1 = "[SPK1]"
@@ -127,7 +131,8 @@ class FavotModel(object):
         self.tgt_dict = self.task.target_dictionary
 
         # Optimize ensemble for generation
-        for model in self.models:
+        for model_idx in range(len(self.models)):
+            model = self.models[model_idx]
             #if legacymode:
             #    model.prepare_for_inference_(args)
             #else:
@@ -136,6 +141,7 @@ class FavotModel(object):
                 model.half()
             if self.use_cuda:
                 model.cuda()
+            self.models[model_idx] = model
 
         # Initialize generator
         self.generator = self.task.build_generator(self.models, args)
@@ -199,6 +205,9 @@ class Favot(object):
         self.delimiter = "．。 　?？!！♪☆★"
         self.sent_splitter = re.compile(".*?[{}]".format(self.delimiter), re.DOTALL)
         self.alphs = "abcdefghijklmnopqrstuvwyz"
+        # self.personality = random.choice(list_personalities(args.jp_persona_chat_xlsx))
+        self.personality = "私は千葉出身です。私は彼女募集中です。私は救急救命士です。私は筋肉質です。私は甘いものが苦手です。"
+        print(f"Choice Personality = {self.personality}")
 
         self.make_input_func = self.make_input
 
@@ -219,38 +228,6 @@ class Favot(object):
                 rets.append(c)
         rets = [r.strip(" \n\t") for r in rets]
         return rets
-
-    def common_word(self, word):
-        word = word.strip("．。？?！!・")
-        common = [
-            "です",
-            "ます",
-            "ありがとう",
-            "趣味",
-            "(笑)",
-        ]
-
-        ## 本当はコーパス内の出現頻度で足きり
-        if len(word) <= 1:
-            return True
-        if len(word) <= 2:
-            hira = hiragana.findall(word)
-            if len(hira) == 0:
-                pass
-            elif len("".join(hira)) >= 1:
-                return True
-            if word in ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]:
-                return True
-        if len(word) <= 3:
-            if word[-1] == "い" or word[-1] == "る":
-                return True
-        for c in common:
-            if c in word:
-                return True
-        if hiragana.fullmatch(word) is not None:
-            return True
-
-        return False
 
     def set_generator_parameters(self, args):
         for k, v in args.items():
@@ -282,30 +259,6 @@ class Favot(object):
         self.fm.scorer = self.fm.task.build_generator(self.fm.models, _args)
         self.logger.info("update generator parameter:" + str(args))
         return
-
-    def make_single_sample(self, inputs, args, task, max_positions):
-        ret = []
-
-        for batch in make_batches(inputs, args, task, max_positions, self.encode_fn):
-            bsz = batch.src_tokens.size(0)
-            tokens = batch.src_tokens
-            lengths = batch.src_lengths
-            constraints = batch.constraints
-            if self.fm.use_cuda:
-                tokens = tokens.cuda()
-                lengths = lengths.cuda()
-                if constraints is not None:
-                    constraints = constraints.cuda()
-
-            sample = {
-                'net_input': {
-                    'src_tokens': tokens,
-                    'src_lengths': lengths,
-                    'prev_output_tokens': tokens,
-                },
-            }
-            ret.append(sample)
-        return ret
 
     def execute(self, uttr, mode="normal"):
         ret = self._execute(uttr, mode=mode)
@@ -673,7 +626,7 @@ class Favot(object):
         line += newspk + newutt + SEPARATOR
         line = line[:-len(SEPARATOR)]
 
-        return line
+        return self.personality + line
 
     def reset(self):
         self.contexts = []
@@ -686,6 +639,7 @@ def add_local_args(parser):
     parser.add_argument('--suppress-duplicate', action="store_true", default=False, help='suppress duplicate sentences')
     parser.add_argument('--show-nbest', default=3, type=int, help='# visible candidates')
     parser.add_argument('--starting-phrase', default="こんにちは。よろしくお願いします。", type=str, help='starting phrase')
+    parser.add_argument('--jp-persona-chat-xlsx', default="./japanese_persona_chat.xlsx", type=str, help="path to japanese_persona_chat.xlsx")
     return parser
 
 
